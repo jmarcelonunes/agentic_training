@@ -2,12 +2,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, field_validator, Field
 from typing import Optional
 import aiosqlite
 import secrets
 import string
 import os
+import re
 from contextlib import asynccontextmanager
 
 # Database path
@@ -17,6 +18,21 @@ DB_PATH = "urls.db"
 BASE_URL = os.getenv("BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN") or "http://localhost:8000"
 if BASE_URL and not BASE_URL.startswith("http"):
     BASE_URL = f"https://{BASE_URL}"
+
+# CORS origins - production frontend and local development
+ALLOWED_ORIGINS = [
+    "https://urlshortener-flame-two.vercel.app",
+    "http://localhost:3000",  # Local development
+]
+
+# Blocked domains for security (prevent abuse)
+BLOCKED_DOMAINS = [
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "[::1]",
+    # Add other blocked domains as needed
+]
 
 # Generate short code (6 characters alphanumeric)
 def generate_short_code() -> str:
@@ -55,17 +71,65 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="URL Shortener", lifespan=lifespan)
 
-# CORS for frontend
+# CORS for frontend - restricted to specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 class URLRequest(BaseModel):
-    url: HttpUrl
+    url: HttpUrl = Field(
+        ...,
+        description="The URL to shorten",
+        examples=["https://www.example.com/very/long/path"]
+    )
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v: HttpUrl) -> HttpUrl:
+        """Enhanced URL validation with security checks."""
+        url_str = str(v)
+        
+        # 1. Check URL length (prevent extremely long URLs)
+        if len(url_str) > 2048:
+            raise ValueError("URL is too long (max 2048 characters)")
+        
+        # 2. Ensure only http/https protocols
+        if not url_str.startswith(("http://", "https://")):
+            raise ValueError("Only HTTP and HTTPS protocols are allowed")
+        
+        # 3. Extract domain and check against blocklist
+        domain_match = re.search(r'://([^/:]+)', url_str)
+        if domain_match:
+            domain = domain_match.group(1).lower()
+            
+            # Check if domain is in blocklist
+            for blocked in BLOCKED_DOMAINS:
+                if blocked in domain:
+                    raise ValueError(f"Cannot shorten URLs with domain: {blocked}")
+        
+        # 4. Basic malicious pattern detection
+        suspicious_patterns = [
+            r'javascript:',
+            r'data:',
+            r'vbscript:',
+            r'file://',
+        ]
+        
+        url_lower = url_str.lower()
+        for pattern in suspicious_patterns:
+            if re.search(pattern, url_lower):
+                raise ValueError("URL contains suspicious pattern")
+        
+        # 5. Check for excessive special characters (potential obfuscation)
+        special_char_count = len(re.findall(r'[%@]', url_str))
+        if special_char_count > 20:
+            raise ValueError("URL contains too many encoded or special characters")
+        
+        return v
 
 class URLResponse(BaseModel):
     short_code: str
