@@ -58,7 +58,7 @@ class OpenAIClient(LLMClient):
 class GoogleClient(LLMClient):
     """Google Generative AI client (Gemini)."""
 
-    def __init__(self, model: str = "gemini-1.5-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         import google.generativeai as genai
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
