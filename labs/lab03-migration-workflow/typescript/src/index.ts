@@ -76,6 +76,8 @@ app.get('/frameworks', (c) => {
       { name: 'django', language: 'python' },
       { name: 'nestjs', language: 'typescript' },
       { name: 'hono', language: 'typescript' },
+      { name: 'spring-boot', language: 'java' },
+      { name: 'dotnet-webapi', language: 'csharp' },
     ],
   });
 });

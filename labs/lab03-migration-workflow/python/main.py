@@ -12,9 +12,6 @@ from state import MigrationState
 # Load environment variables
 load_dotenv()
 
-# Import LLM client from lab02 or create locally
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../lab02-code-analyzer-agent/python'))
 from llm_client import get_llm_client
 
 app = FastAPI(
@@ -106,6 +103,8 @@ async def list_frameworks():
             {"name": "django", "language": "python"},
             {"name": "nestjs", "language": "typescript"},
             {"name": "hono", "language": "typescript"},
+            {"name": "spring-boot", "language": "java"},
+            {"name": "dotnet-webapi", "language": "csharp"},
         ]
     }
 

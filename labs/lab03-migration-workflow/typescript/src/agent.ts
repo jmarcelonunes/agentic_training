@@ -138,24 +138,56 @@ export class MigrationAgent {
       });
 
       const response = await this.llm.chat([{ role: 'user', content: prompt }]);
-      const migratedCode = this.extractCode(response);
+      const codeBlocks = this.extractAllCodeBlocks(response);
 
-      // Store result
-      for (const filename of step.inputFiles) {
-        const newFilename = this.transformFilename(
-          filename,
-          state.targetFramework
-        );
-        state = addMigratedFile(state, newFilename, migratedCode);
+      if (codeBlocks.length >= step.inputFiles.length && step.inputFiles.length > 1) {
+        // Multiple code blocks — match to input files
+        const matched: Record<string, string> = {};
+        const unmatchedBlocks = [...codeBlocks];
+
+        // First pass: match by detected filename
+        for (const block of codeBlocks) {
+          if (block.filename) {
+            for (const origFilename of step.inputFiles) {
+              const newFilename = this.transformFilename(origFilename, state.targetFramework);
+              const blockBase = block.filename.toLowerCase().split('/').pop() || '';
+              const targetBase = newFilename.toLowerCase().split('/').pop() || '';
+              if (blockBase === targetBase || targetBase.endsWith(blockBase) || blockBase.endsWith(targetBase)) {
+                matched[newFilename] = block.code;
+                const idx = unmatchedBlocks.indexOf(block);
+                if (idx >= 0) unmatchedBlocks.splice(idx, 1);
+                break;
+              }
+            }
+          }
+        }
+
+        // Second pass: positional matching for remaining
+        const unmatchedFiles = step.inputFiles
+          .map((f) => this.transformFilename(f, state.targetFramework))
+          .filter((f) => !(f in matched));
+        for (let i = 0; i < unmatchedFiles.length && i < unmatchedBlocks.length; i++) {
+          matched[unmatchedFiles[i]] = unmatchedBlocks[i].code;
+        }
+
+        for (const [newFilename, code] of Object.entries(matched)) {
+          state = addMigratedFile(state, newFilename, code);
+        }
+      } else {
+        // Single block or single file
+        const migratedCode = codeBlocks.length > 0 ? codeBlocks[0].code : this.extractCode(response);
+        for (const filename of step.inputFiles) {
+          const newFilename = this.transformFilename(filename, state.targetFramework);
+          state = addMigratedFile(state, newFilename, migratedCode);
+        }
+
+        if (step.inputFiles.length === 0) {
+          const defaultName = `migrated_step_${step.id}.${this.getExtension(state.targetFramework)}`;
+          state = addMigratedFile(state, defaultName, migratedCode);
+        }
       }
 
-      // If no specific files, use a default name
-      if (step.inputFiles.length === 0) {
-        const defaultName = `migrated_step_${step.id}.${this.getExtension(state.targetFramework)}`;
-        state = addMigratedFile(state, defaultName, migratedCode);
-      }
-
-      state = updateStepStatus(state, step.id, 'completed', migratedCode);
+      state = updateStepStatus(state, step.id, 'completed', response);
       state = incrementStep(state);
     }
 
@@ -215,6 +247,7 @@ export class MigrationAgent {
       '.js': 'javascript',
       '.ts': 'typescript',
       '.java': 'java',
+      '.cs': 'csharp',
       '.go': 'go',
       '.rs': 'rust',
     };
@@ -237,6 +270,8 @@ export class MigrationAgent {
       express: 'js',
       nestjs: 'ts',
       hono: 'ts',
+      'dotnet-webapi': 'cs',
+      'spring-boot': 'java',
     };
     return extMap[framework.toLowerCase()] || 'txt';
   }
@@ -264,7 +299,7 @@ export class MigrationAgent {
         let code = parts[1];
         const firstLine = code.split('\n')[0].trim();
         if (
-          ['python', 'javascript', 'typescript', 'java', 'go'].includes(
+          ['python', 'javascript', 'typescript', 'java', 'csharp', 'go'].includes(
             firstLine
           )
         ) {
@@ -274,6 +309,51 @@ export class MigrationAgent {
       }
     }
     return response;
+  }
+
+  private extractAllCodeBlocks(response: string): Array<{ filename: string | null; code: string }> {
+    const blocks: Array<{ filename: string | null; code: string }> = [];
+    const parts = response.split('```');
+    const fileExtPattern = /[`*#/\\]+\s*([\w/\\]+\.(?:cs|java|py|js|ts|go|rs))\s*[`*]*/gi;
+    const fallbackPattern = /([\w/\\]+\.(?:cs|java|py|js|ts|go|rs))\s*$/gim;
+    const commentPattern = /^(?:\/\/|#)\s*([\w/\\]+\.(?:cs|java|py|js|ts|go|rs))/i;
+
+    for (let i = 1; i < parts.length; i += 2) {
+      let code = parts[i];
+      const precedingText = parts[i - 1] || '';
+      let detectedFilename: string | null = null;
+
+      // Look for filename in preceding text
+      const match1 = fileExtPattern.exec(precedingText);
+      fileExtPattern.lastIndex = 0;
+      if (match1) {
+        detectedFilename = match1[1].trim();
+      } else {
+        const match2 = fallbackPattern.exec(precedingText);
+        fallbackPattern.lastIndex = 0;
+        if (match2) {
+          detectedFilename = match2[1].trim();
+        }
+      }
+
+      // Remove language identifier
+      const firstLine = code.split('\n')[0].trim();
+      if (['python', 'javascript', 'typescript', 'java', 'csharp', 'go'].includes(firstLine)) {
+        code = code.includes('\n') ? code.split('\n').slice(1).join('\n') : '';
+      }
+
+      // Check first code line for filename comment
+      if (!detectedFilename) {
+        const firstCodeLine = code.trim().split('\n')[0]?.trim() || '';
+        const commentMatch = commentPattern.exec(firstCodeLine);
+        if (commentMatch) {
+          detectedFilename = commentMatch[1].trim();
+        }
+      }
+
+      blocks.push({ filename: detectedFilename, code: code.trim() });
+    }
+    return blocks;
   }
 
   /**
@@ -319,6 +399,8 @@ export class MigrationAgent {
       django: (f) => f.replace('.js', '.py'),
       hono: (f) => f.replace('.py', '.ts').replace('routers/', 'routes/'),
       nestjs: (f) => f.replace('.py', '.ts').replace('routers/', 'controllers/'),
+      'dotnet-webapi': (f) => f.replace('.java', '.cs').replace('controllers/', 'Controllers/').replace('services/', 'Services/').replace('models/', 'Models/').replace('dto/', 'Dto/'),
+      'spring-boot': (f) => f.replace('.cs', '.java').replace('Controllers/', 'controllers/').replace('Services/', 'services/').replace('Models/', 'models/'),
     };
     const transform = transformations[target.toLowerCase()] || ((f) => f);
     return transform(filename);
