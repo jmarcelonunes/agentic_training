@@ -79,6 +79,15 @@ class CodebaseVectorStore:
             "name": self.collection.name
         }
 
+    def get_indexed_files(self) -> List[str]:
+        """Get distinct filenames from all indexed chunks."""
+        count = self.collection.count()
+        if count == 0:
+            return []
+        result = self.collection.get(include=["metadatas"], limit=count)
+        files = sorted({m["filename"] for m in result["metadatas"] if "filename" in m})
+        return files
+
     def clear(self) -> None:
         """Clear all documents from the collection."""
         self.client.delete_collection(self.collection.name)

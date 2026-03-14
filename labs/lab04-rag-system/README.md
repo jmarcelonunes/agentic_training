@@ -1,62 +1,81 @@
-# Lab 04: RAG System with Evaluation
+<div align="center">
 
-## Objective
-Build a complete RAG system for querying a codebase, including proper evaluation.
+# 🔍 Codebase RAG System
 
-**Time Allotted**: 1 hour 45 minutes
+**Ask questions about any public GitHub repository using AI-powered retrieval.**
 
-## Learning Goals
-- Implement a RAG pipeline from scratch
-- Use appropriate chunking for code
-- Build an evaluation framework
-- Understand retrieval metrics
-
----
-
-## Choose Your Language
-
-| Aspect | Python | TypeScript |
-|--------|--------|------------|
-| Directory | `./python` | `./typescript` |
-| Vector DB | ChromaDB | In-memory (OpenAI embeddings) |
-| Embeddings | sentence-transformers / OpenAI | OpenAI API |
-| Framework | FastAPI | Hono |
+[![Backend](https://img.shields.io/badge/Backend-Railway-blueviolet?logo=railway)](https://lab04-rag-system-production.up.railway.app/health)
+[![Frontend](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://frontend-delta-puce-68.vercel.app)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=next.js)](https://nextjs.org)
+[![Anthropic](https://img.shields.io/badge/LLM-Anthropic-orange?logo=anthropic)](https://anthropic.com)
 
 ---
 
-## What You'll Build
+<img width="700" alt="architecture" src="https://img.shields.io/badge/GitHub_Repo→Chunk→Embed→Store→Retrieve→Answer-informational?style=for-the-badge&color=0d1117" />
 
-A codebase Q&A system that:
-1. Indexes code files with embeddings
-2. Retrieves relevant code for questions
-3. Generates answers grounded in code
-4. Evaluates retrieval and generation quality
+</div>
+
+## What It Does
+
+Point to **any public GitHub repo**, and the system will:
+
+1. **Download & chunk** the source code intelligently (by function, class, or block)
+2. **Embed** each chunk using `sentence-transformers` (all-MiniLM-L6-v2) — free, no API key
+3. **Store** embeddings in ChromaDB for fast vector similarity search
+4. **Answer** natural-language questions using retrieved context + Anthropic Claude
+
+---
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Codebase RAG System                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  INDEXING                                                   │
-│  ────────                                                   │
-│  Code Files → Chunk → Embed → Store (Vector DB)             │
-│                                                             │
-│  QUERYING                                                   │
-│  ────────                                                   │
-│  Question → Embed → Search → Retrieve → Generate Answer     │
-│                                                             │
-│  EVALUATION                                                 │
-│  ──────────                                                 │
-│  Test Questions → RAG → Compare to Ground Truth → Metrics   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+ ┌──────────────┐     ┌──────────────────────────────────────────────────┐
+ │   Next.js    │     │              FastAPI Backend                     │
+ │   Frontend   │────▶│                                                  │
+ │  (Vercel)    │     │  ┌──────────┐  ┌───────────┐  ┌──────────────┐  │
+ └──────────────┘     │  │ Chunker  │  │ Embedder  │  │  ChromaDB    │  │
+                      │  │ (AST +   │──▶│ MiniLM-  │──▶│ (Vector     │  │
+ GitHub Tarball ─────▶│  │  regex)  │  │  L6-v2)   │  │   Store)    │  │
+   API Download       │  └──────────┘  └───────────┘  └──────┬───────┘  │
+                      │                                       │          │
+                      │  ┌──────────────────────┐    Top-K    │          │
+                      │  │   Anthropic Claude    │◀───────────┘          │
+                      │  │   (Answer Gen)        │                       │
+                      │  └──────────────────────┘       (Railway)       │
+                      └──────────────────────────────────────────────────┘
 ```
+
+---
+
+## Live Demo
+
+| Service | URL |
+|---------|-----|
+| **Frontend** | https://frontend-delta-puce-68.vercel.app |
+| **Backend API** | https://lab04-rag-system-production.up.railway.app |
+| **Health Check** | https://lab04-rag-system-production.up.railway.app/health |
+
+> **Note:** Railway storage is ephemeral — the vector index resets on each deploy. Index a repo after each backend restart.
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Next.js 14, React 18, Tailwind CSS | Interactive UI (Dashboard, Index, Query) |
+| **Backend** | FastAPI, Uvicorn | REST API with async endpoints |
+| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2) | Free local embeddings — no API key needed |
+| **Vector DB** | ChromaDB | Persistent vector storage & similarity search |
+| **LLM** | Anthropic Claude (via SDK) | Answer generation from retrieved context |
+| **Hosting** | Vercel (frontend) + Railway (backend) | Production deployment |
 
 ---
 
 ## Quick Start
 
-### Python Setup
+### Backend (Python)
 
 ```bash
 cd python
@@ -64,348 +83,82 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Set API key (OpenAI for embeddings, or use free sentence-transformers)
-export OPENAI_API_KEY=your-key
-# And for generation:
+# Required for answer generation
 export ANTHROPIC_API_KEY=your-key
 
-uvicorn main:app --reload
+# Start the server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### TypeScript Setup
+### Frontend (Next.js)
 
 ```bash
-cd typescript
+cd frontend
 npm install
 
-# OpenAI is required for embeddings
-export OPENAI_API_KEY=your-key
-export ANTHROPIC_API_KEY=your-key
+# Point to your backend
+echo 'NEXT_PUBLIC_API_URL=http://localhost:8000' > .env.local
 
 npm run dev
 ```
 
+Open http://localhost:3000 — you're ready to go.
+
 ---
 
-## Step-by-Step Instructions
+## API Reference
 
-### Step 1: Implement Code Chunking (20 min)
-
-<details>
-<summary><b>Python</b></summary>
-
-```python
-# rag/chunker.py
-from dataclasses import dataclass
-from typing import List, Dict
-import re
-
-@dataclass
-class CodeChunk:
-    content: str
-    metadata: Dict
-    chunk_id: str
-
-class CodeChunker:
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-
-    def chunk_file(self, content: str, filename: str) -> List[CodeChunk]:
-        language = self._detect_language(filename)
-        if language == "python":
-            return self._chunk_python(content, filename)
-        return self._chunk_generic(content, filename, language)
-
-    def _chunk_python(self, content: str, filename: str) -> List[CodeChunk]:
-        # Split by function/class definitions
-        pattern = r'(^(?:def|class|async def)\s+\w+.*?)(?=\n(?:def|class|async def)|\Z)'
-        matches = re.findall(pattern, content, re.MULTILINE | re.DOTALL)
-        # ... return chunks
-```
-
-</details>
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check (returns ready status) |
+| `GET` | `/stats` | Index statistics (chunk count, collection name) |
+| `GET` | `/files` | List all indexed file paths |
+| `POST` | `/index/github` | Index a public GitHub repo by URL |
+| `POST` | `/index/files` | Index files from request body |
+| `POST` | `/index/directory` | Index a local directory |
+| `POST` | `/query` | Ask a question about the indexed codebase |
+| `POST` | `/evaluate` | Evaluate RAG retrieval & generation quality |
+| `DELETE` | `/index` | Clear the entire index |
 
 <details>
-<summary><b>TypeScript</b></summary>
-
-```typescript
-// chunker.ts
-interface CodeChunk {
-  content: string;
-  metadata: { filename: string; language: string; type: string; name?: string };
-  chunkId: string;
-}
-
-class CodeChunker {
-  constructor(
-    private chunkSize: number = 1000,
-    private chunkOverlap: number = 100
-  ) {}
-
-  chunkFile(content: string, filename: string): CodeChunk[] {
-    const language = this.detectLanguage(filename);
-    if (language === 'python') {
-      return this.chunkPython(content, filename);
-    }
-    return this.chunkGeneric(content, filename, language);
-  }
-
-  private chunkPython(content: string, filename: string): CodeChunk[] {
-    const pattern = /(^(?:def|class|async def)\s+\w+.*?)(?=\n(?:def|class|async def)|\Z)/gms;
-    const matches = [...content.matchAll(pattern)];
-    // ... return chunks
-  }
-}
-```
-
-</details>
-
-### Step 2: Set Up Vector Store (15 min)
-
-<details>
-<summary><b>Python (ChromaDB)</b></summary>
-
-```python
-# rag/vector_store.py
-import chromadb
-from chromadb.utils import embedding_functions
-
-class CodebaseVectorStore:
-    def __init__(self, collection_name: str = "codebase"):
-        self.client = chromadb.PersistentClient(path="./chroma_db")
-
-        # OpenAI embeddings (or use sentence-transformers for free)
-        self.embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            model_name="text-embedding-3-small"
-        )
-
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=self.embedding_fn
-        )
-
-    def add_documents(self, documents, metadatas, ids):
-        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
-
-    def query(self, query: str, n_results: int = 5):
-        return self.collection.query(query_texts=[query], n_results=n_results)
-```
-
-</details>
-
-<details>
-<summary><b>TypeScript (In-Memory + OpenAI)</b></summary>
-
-```typescript
-// vector-store.ts
-class OpenAIEmbeddings {
-  async embed(texts: string[]): Promise<number[][]> {
-    const response = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: texts,
-    });
-    return response.data.map((d) => d.embedding);
-  }
-}
-
-class InMemoryVectorStore {
-  private documents = new Map<string, { content: string; embedding: number[] }>();
-
-  async addDocuments(docs: string[], metadatas: any[], ids: string[]) {
-    const embeddings = await this.embeddings.embed(docs);
-    for (let i = 0; i < docs.length; i++) {
-      this.documents.set(ids[i], { content: docs[i], embedding: embeddings[i] });
-    }
-  }
-
-  async query(queryText: string, nResults: number = 5) {
-    const [queryEmb] = await this.embeddings.embed([queryText]);
-    // Calculate cosine similarity, sort, return top N
-  }
-}
-```
-
-</details>
-
-### Step 3: Build RAG Pipeline (20 min)
-
-<details>
-<summary><b>Python</b></summary>
-
-```python
-# rag/pipeline.py
-class CodebaseRAG:
-    def __init__(self, llm_client, collection_name: str = "codebase"):
-        self.llm = llm_client
-        self.vector_store = CodebaseVectorStore(collection_name)
-        self.chunker = CodeChunker()
-
-    def index_files(self, files: Dict[str, str]) -> int:
-        for filename, content in files.items():
-            chunks = self.chunker.chunk_file(content, filename)
-            self.vector_store.add_documents(
-                [c.content for c in chunks],
-                [c.metadata for c in chunks],
-                [c.chunk_id for c in chunks]
-            )
-        return len(chunks)
-
-    def query(self, question: str, n_results: int = 5) -> Dict:
-        results = self.vector_store.query(question, n_results)
-        context = self._build_context(results)
-
-        answer = self.llm.chat([
-            {"role": "system", "content": "Answer based on the code context."},
-            {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
-        ])
-
-        return {"answer": answer, "sources": results}
-```
-
-</details>
-
-<details>
-<summary><b>TypeScript</b></summary>
-
-```typescript
-// pipeline.ts
-class CodebaseRAG {
-  private vectorStore: InMemoryVectorStore;
-  private chunker = new CodeChunker();
-
-  constructor(private llm: LLMClient) {
-    this.vectorStore = createVectorStore();
-  }
-
-  async indexFiles(files: Record<string, string>): Promise<number> {
-    for (const [filename, content] of Object.entries(files)) {
-      const chunks = this.chunker.chunkFile(content, filename);
-      await this.vectorStore.addDocuments(
-        chunks.map(c => c.content),
-        chunks.map(c => c.metadata),
-        chunks.map(c => c.chunkId)
-      );
-    }
-    return chunks.length;
-  }
-
-  async query(question: string, nResults = 5): Promise<RAGResponse> {
-    const results = await this.vectorStore.query(question, nResults);
-    const context = this.buildContext(results);
-
-    const answer = await this.llm.chat([
-      { role: 'system', content: 'Answer based on the code context.' },
-      { role: 'user', content: `Context:\n${context}\n\nQuestion: ${question}` }
-    ]);
-
-    return { answer, sources: results };
-  }
-}
-```
-
-</details>
-
-### Step 4: Implement Evaluation (25 min)
-
-<details>
-<summary><b>Python</b></summary>
-
-```python
-# rag/evaluation.py
-def precision_at_k(retrieved: List[str], relevant: Set[str], k: int) -> float:
-    retrieved_k = retrieved[:k]
-    return len(set(retrieved_k) & relevant) / k
-
-def recall_at_k(retrieved: List[str], relevant: Set[str], k: int) -> float:
-    retrieved_k = retrieved[:k]
-    return len(set(retrieved_k) & relevant) / len(relevant)
-
-def mrr(retrieved: List[str], relevant: Set[str]) -> float:
-    for i, doc in enumerate(retrieved):
-        if doc in relevant:
-            return 1.0 / (i + 1)
-    return 0.0
-
-class RAGEvaluator:
-    def evaluate_retrieval(self, examples, k=5) -> Dict:
-        metrics = {'precision': [], 'recall': [], 'mrr': []}
-        for ex in examples:
-            result = self.rag.query(ex.question, k)
-            retrieved = [s['file'] for s in result['sources']]
-            # Calculate metrics...
-        return averaged_metrics
-```
-
-</details>
-
-<details>
-<summary><b>TypeScript</b></summary>
-
-```typescript
-// evaluation.ts
-function precisionAtK(retrieved: string[], relevant: Set<string>, k: number): number {
-  const retrievedK = retrieved.slice(0, k);
-  return retrievedK.filter(doc => relevant.has(doc)).length / k;
-}
-
-function recallAtK(retrieved: string[], relevant: Set<string>, k: number): number {
-  const retrievedK = retrieved.slice(0, k);
-  return retrievedK.filter(doc => relevant.has(doc)).length / relevant.size;
-}
-
-function mrr(retrieved: string[], relevant: Set<string>): number {
-  for (let i = 0; i < retrieved.length; i++) {
-    if (relevant.has(retrieved[i])) return 1 / (i + 1);
-  }
-  return 0;
-}
-
-class RAGEvaluator {
-  async evaluateRetrieval(examples: EvalExample[], k = 5) {
-    const metrics = { precision: [], recall: [], mrr: [] };
-    for (const ex of examples) {
-      const result = await this.rag.query(ex.question, k);
-      const retrieved = result.sources.map(s => s.file);
-      // Calculate metrics...
-    }
-    return averagedMetrics;
-  }
-}
-```
-
-</details>
-
-### Step 5: Test the System (15 min)
+<summary><b>Example: Index a GitHub repo</b></summary>
 
 ```bash
-# Index some files
-curl -X POST http://localhost:8000/index/files \
+curl -X POST https://lab04-rag-system-production.up.railway.app/index/github \
   -H "Content-Type: application/json" \
-  -d '{
-    "files": {
-      "auth.py": "def login(user, password):\n    # Validate credentials\n    return token",
-      "api.py": "def get_users():\n    return db.query(User).all()"
-    }
-  }'
-
-# Query
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question": "How does login work?"}'
-
-# Evaluate
-curl -X POST http://localhost:8000/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "examples": [{
-      "question": "How does login work?",
-      "expected_answer": "Login validates credentials and returns a token",
-      "relevant_files": ["auth.py"]
-    }]
-  }'
+  -d '{"repo_url": "https://github.com/expressjs/express", "branch": "master"}'
 ```
+
+Response:
+```json
+{
+  "indexed_chunks": 342,
+  "repo": "expressjs/express",
+  "branch": "master"
+}
+```
+</details>
+
+<details>
+<summary><b>Example: Query the codebase</b></summary>
+
+```bash
+curl -X POST https://lab04-rag-system-production.up.railway.app/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How does routing work?", "n_results": 5}'
+```
+
+Response:
+```json
+{
+  "answer": "Express routing works by...",
+  "sources": [
+    {"file": "lib/router/index.js", "type": "function", "name": "route", "relevance": 0.87}
+  ],
+  "context_used": "..."
+}
+```
+</details>
 
 ---
 
@@ -413,61 +166,75 @@ curl -X POST http://localhost:8000/evaluate \
 
 ```
 lab04-rag-system/
-├── README.md
-├── python/
-│   ├── main.py              # FastAPI application
+├── python/                    # FastAPI backend
+│   ├── main.py                # API endpoints & GitHub indexing
+│   ├── llm_client.py          # Multi-provider LLM client (Anthropic/OpenAI/Google)
 │   ├── rag/
-│   │   ├── __init__.py
-│   │   ├── vector_store.py  # ChromaDB wrapper
-│   │   ├── chunker.py       # Code chunking
-│   │   ├── pipeline.py      # RAG pipeline
-│   │   └── evaluation.py    # Evaluation metrics
-│   └── requirements.txt
-└── typescript/
-    ├── src/
-    │   ├── index.ts         # Hono application
-    │   ├── vector-store.ts  # In-memory + OpenAI
-    │   ├── chunker.ts       # Code chunking
-    │   ├── pipeline.ts      # RAG pipeline
-    │   ├── evaluation.ts    # Evaluation metrics
-    │   ├── llm-client.ts
-    │   └── types.ts
-    ├── package.json
-    └── tsconfig.json
+│   │   ├── chunker.py         # Intelligent code chunking (AST + regex)
+│   │   ├── vector_store.py    # ChromaDB wrapper with sentence-transformers
+│   │   ├── pipeline.py        # RAG pipeline (index + query orchestration)
+│   │   └── evaluation.py      # Retrieval & generation metrics
+│   ├── requirements.txt
+│   ├── railway.toml           # Railway deployment config
+│   ├── Procfile               # Process file for deployment
+│   └── runtime.txt            # Python version spec
+│
+├── frontend/                  # Next.js 14 App Router
+│   ├── app/
+│   │   ├── page.tsx           # Dashboard (health, stats, quick actions)
+│   │   ├── index-code/        # GitHub repo indexing page
+│   │   ├── query/             # Natural language query page
+│   │   └── layout.tsx         # Root layout with navigation
+│   ├── lib/
+│   │   └── api.ts             # Typed API client for all backend endpoints
+│   ├── tailwind.config.ts
+│   └── package.json
+│
+└── README.md                  # ← You are here
 ```
 
 ---
 
-## Key Differences: Python vs TypeScript
+## Key Design Decisions
 
-| Aspect | Python | TypeScript |
-|--------|--------|------------|
-| Vector DB | ChromaDB (persistent) | In-memory (demo) |
-| Embeddings | sentence-transformers (free) or OpenAI | OpenAI API only |
-| Production | Use ChromaDB/Pinecone | Use Pinecone/Weaviate |
-
-**Note**: The TypeScript implementation uses an in-memory vector store for simplicity. For production, use Pinecone (`@pinecone-database/pinecone`) or Weaviate (`weaviate-ts-client`).
-
----
-
-## Deliverables
-
-- [ ] Working RAG system with code indexing
-- [ ] Smart code-aware chunking
-- [ ] Evaluation framework with retrieval metrics
-- [ ] LLM-as-judge generation evaluation
-- [ ] Deployed to Railway/Vercel
-- [ ] Evaluation dataset (10+ examples)
+| Decision | Rationale |
+|----------|-----------|
+| **sentence-transformers** over OpenAI embeddings | Free, no API key, runs locally — great for dev & demos |
+| **GitHub tarball API** over `git clone` | No git binary needed in container; faster for full-repo download |
+| **Deferred initialization** (lifespan) | Model loads ~60s; `/health` responds immediately for Railway healthchecks |
+| **ChromaDB PersistentClient** | Survives server restarts locally (ephemeral on Railway) |
+| **Chunk deduplication** | Prevents ChromaDB errors when repos have duplicated code patterns |
+| **CORS allow all** | Demo project — restrict in production |
 
 ---
 
-## Extension Challenges
+## Deployment
 
-1. **Hybrid Search**: Add BM25 keyword search alongside vector search
-2. **Reranking**: Add a reranking step to improve retrieval
-3. **Caching**: Cache embeddings and query results
-4. **Multiple Codebases**: Support querying across multiple indexed repos
+### Backend → Railway
+
+```bash
+cd python
+railway link          # Link to your Railway project
+railway up --detach   # Deploy
+```
+
+Set environment variable: `ANTHROPIC_API_KEY`, `LLM_PROVIDER=anthropic`
+
+### Frontend → Vercel
+
+```bash
+cd frontend
+vercel --prod
+```
+
+Set environment variable: `NEXT_PUBLIC_API_URL=https://your-railway-app.up.railway.app`
 
 ---
 
-**Next**: [Lab 05 - Multi-Agent Orchestration](../lab05-multi-agent/)
+## Learning Goals
+
+- [x] Implement a RAG pipeline from scratch (chunking → embedding → retrieval → generation)
+- [x] Use intelligent code chunking (function/class boundaries via AST + regex)
+- [x] Understand vector similarity search with embeddings
+- [x] Build a full-stack app with typed API client
+- [x] Deploy a Python + Next.js app to cloud (Railway + Vercel)

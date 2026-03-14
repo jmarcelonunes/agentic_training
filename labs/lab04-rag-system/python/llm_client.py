@@ -1,4 +1,4 @@
-"""LLM client abstraction for Code Analyzer."""
+"""LLM client abstraction for RAG System."""
 import os
 from abc import ABC, abstractmethod
 from typing import List, Dict
@@ -30,12 +30,15 @@ class AnthropicClient(LLMClient):
             else:
                 filtered.append(m)
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            system=system,
-            messages=filtered
-        )
+        kwargs = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "messages": filtered,
+        }
+        if system:
+            kwargs["system"] = [{"type": "text", "text": system}]
+
+        response = self.client.messages.create(**kwargs)
         return response.content[0].text
 
 
@@ -67,7 +70,6 @@ class GoogleClient(LLMClient):
         self.model = genai.GenerativeModel(model)
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
-        # Extract system and build prompt
         system = ""
         history = []
         user_message = ""

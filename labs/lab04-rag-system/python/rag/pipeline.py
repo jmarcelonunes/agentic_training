@@ -36,6 +36,17 @@ class CodebaseRAG:
         )
         self.chunker = CodeChunker()
 
+    @staticmethod
+    def _deduplicate_ids(ids: List[str]) -> List[str]:
+        """Ensure all IDs are unique by appending a counter to duplicates."""
+        seen: Dict[str, int] = {}
+        unique = []
+        for chunk_id in ids:
+            count = seen.get(chunk_id, 0)
+            seen[chunk_id] = count + 1
+            unique.append(chunk_id if count == 0 else f"{chunk_id}_{count}")
+        return unique
+
     def index_directory(
         self,
         directory: str,
@@ -76,6 +87,7 @@ class CodebaseRAG:
                         print(f"Error processing {filepath}: {e}")
 
         if documents:
+            ids = self._deduplicate_ids(ids)
             self.vector_store.add_documents(documents, metadatas, ids)
             print(f"Indexed {len(documents)} chunks from {directory}")
 
@@ -99,6 +111,7 @@ class CodebaseRAG:
                 ids.append(chunk.chunk_id)
 
         if documents:
+            ids = self._deduplicate_ids(ids)
             self.vector_store.add_documents(documents, metadatas, ids)
 
         return len(documents)
