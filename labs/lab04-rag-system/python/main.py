@@ -156,7 +156,9 @@ async def index_github(request: IndexGitHubRequest):
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             tar_path = os.path.join(tmpdir, "repo.tar.gz")
-            urllib.request.urlretrieve(tarball_url, tar_path)
+            with urllib.request.urlopen(req) as response:
+                with open(tar_path, "wb") as f:
+                    f.write(response.read())
 
             extract_dir = os.path.join(tmpdir, "repo")
             with tarfile.open(tar_path, "r:gz") as tar:
